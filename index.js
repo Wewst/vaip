@@ -3,7 +3,7 @@ const { Telegraf, Markup } = require("telegraf");
 /* ================= НАСТРОЙКИ ================= */
 
 // 🔴 ВСТАВЬ СЮДА НОВЫЙ ТОКЕН (НЕ ПАЛИ ЕГО)
-const BOT_TOKEN = "8289215978:AAE8yPhfmAhmZ38N7DK25ntE9b0IN1cNxgY";
+const BOT_TOKEN = "8289215978:AAGO7FscrCaQhSwCvF12Is-MXEGn9tmcw3w";
 
 // 🔴 chat_id продавца
 const SELLER_CHAT_ID = 8050542983;

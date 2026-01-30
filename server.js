@@ -5,26 +5,24 @@ const TelegramBot = require('node-telegram-bot-api');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ← Токены ботов (обязательно замени!)
-const BUYER_BOT_TOKEN = '8289215978:AAE8yPhfmAhmZ38N7DK25ntE9b0IN1cNxgY';      // токен бота покупателей
-const SELLER_BOT_TOKEN = '8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8';     // токен бота продавцов
+// Токен бота (для уведомлений тебе/покупателю). Можно использовать один бот.
+const BOT_TOKEN = '8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8';  // ← замени
+const bot = new TelegramBot(BOT_TOKEN);
 
-const buyerBot = new TelegramBot(BUYER_BOT_TOKEN);
-const sellerBot = new TelegramBot(SELLER_BOT_TOKEN);
+// Твой Telegram ID — куда слать уведомления о новых заказах
+const YOUR_TELEGRAM_ID = 8050542983;  // ← вставь свой ID от @userinfobot
 
-// Хранение заказов в памяти (id → объект заказа)
-const orders = new Map();           // Map<string, object>
-let orderIdCounter = 1000;          // простой счётчик для id
+const orders = new Map();
+let orderIdCounter = 1000;
 
 app.use(bodyParser.json());
-app.use(express.static('public'));  // если захочешь разместить html прямо здесь (опционально)
 
-// Создание заказа (вызывается ботом покупателя)
+// Эндпоинт для брони от покупателя
 app.post('/api/reserve', (req, res) => {
-  const { product_name, price, meet_place, meet_time, buyer_id, seller_id } = req.body;
+  const { product_name, price, meet_place, meet_time, buyer_id, username } = req.body;
 
-  if (!product_name || !price || !meet_place || !meet_time || !buyer_id) {
-    return res.status(400).json({ error: 'Не хватает обязательных полей' });
+  if (!product_name || !price || !meet_place || !meet_time) {
+    return res.status(400).json({ error: 'Не все поля заполнены' });
   }
 
   const orderId = String(orderIdCounter++);
@@ -35,73 +33,50 @@ app.post('/api/reserve', (req, res) => {
     meet_place,
     meet_time,
     status: 'new',
-    buyer_id: Number(buyer_id),
-    seller_id: Number(seller_id || 123456789), // ← замени на реальный telegram id продавца, если фиксированный
+    buyer_id: Number(buyer_id) || 0,
+    username: username || 'аноним',
     createdAt: new Date().toISOString()
   };
 
   orders.set(orderId, order);
 
-  // Уведомляем покупателя
-  buyerBot.sendMessage(buyer_id, 
-    `✅ Бронь отправлена!\n\nТовар: ${product_name}\nЦена: ${price} ₽\nМесто: ${meet_place}\nВремя: ${meet_time}\n\nОжидайте подтверждения от продавца.`
-  ).catch(console.error);
-
-  // Уведомляем продавца
-  sellerBot.sendMessage(seller_id || 123456789,
-    `🛒 Новый заказ!\n\nТовар: ${product_name}\nЦена: ${price} ₽\nПокупатель: @${req.body.username || 'аноним'}\nМесто: ${meet_place}\nВремя: ${meet_time}\n\nОткройте мини-приложение, чтобы подтвердить или отменить.`
-  ).catch(console.error);
+  // Уведомление тебе
+  bot.sendMessage(YOUR_TELEGRAM_ID,
+    `🛒 НОВАЯ БРОНЬ #${orderId}\n\n${product_name} — ${price} ₽\n@${order.username}\nМесто: ${meet_place}\nВремя: ${meet_time}`
+  ).catch(err => console.error('Не удалось отправить уведомление:', err));
 
   res.json({ success: true, orderId });
 });
 
-// Получить заказы продавца
+// Для продавца — все заказы
 app.get('/api/orders', (req, res) => {
-  const seller_id = Number(req.query.seller_id);
-
-  if (!seller_id) {
-    return res.status(400).json({ error: 'seller_id обязателен' });
-  }
-
-  const sellerOrders = Array.from(orders.values())
-    .filter(o => o.seller_id === seller_id);
-
-  res.json(sellerOrders);
+  res.json(Array.from(orders.values()));
 });
 
-// Обновить статус заказа
+// Обновление статуса
 app.post('/api/update-status', (req, res) => {
-  const { order_id, status, seller_id } = req.body;
+  const { order_id, status } = req.body;
 
-  if (!order_id || !status || !['confirmed', 'cancelled'].includes(status)) {
-    return res.status(400).json({ error: 'Неверные данные' });
+  if (!order_id || !['confirmed', 'cancelled'].includes(status)) {
+    return res.status(400).json({ error: 'Неверные параметры' });
   }
 
   const order = orders.get(order_id);
-  if (!order) {
-    return res.status(404).json({ error: 'Заказ не найден' });
-  }
-
-  if (order.seller_id !== Number(seller_id)) {
-    return res.status(403).json({ error: 'Доступ запрещён' });
-  }
+  if (!order) return res.status(404).json({ error: 'Заказ не найден' });
 
   order.status = status;
-  order.updatedAt = new Date().toISOString();
 
-  // Уведомляем покупателя
-  const text = status === 'confirmed'
-    ? `🎉 Бронь подтверждена!\n\nТовар: ${order.product_name}\nМесто: ${order.meet_place}\nВремя: ${order.meet_time}`
-    : `❌ Бронь отменена продавцом.\nТовар: ${order.product_name}`;
+  if (order.buyer_id > 0) {
+    const msg = status === 'confirmed'
+      ? `✅ Бронь подтверждена!\n${order.product_name} — ${order.meet_place} в ${order.meet_time}`
+      : `❌ Бронь отменена.\n${order.product_name}`;
 
-  buyerBot.sendMessage(order.buyer_id, text).catch(console.error);
-
-  // Можно уведомить и продавца, но необязательно
-  // sellerBot.sendMessage(seller_id, `Статус заказа #${order_id} изменён на ${status}`);
+    bot.sendMessage(order.buyer_id, msg).catch(() => {});
+  }
 
   res.json({ success: true });
 });
 
 app.listen(port, () => {
-  console.log(`Сервер запущен на порту ${port}`);
+  console.log(`Бекенд работает на порту ${port}`);
 });

@@ -1,24 +1,23 @@
-// index.js
 const { Telegraf } = require("telegraf");
-const http = require("http");
+const express = require("express");
 
-// --- Настройки ---
-const BOT_TOKEN = process.env.BOT_TOKEN; // токен должен быть в Environment Variables Render
-const SELLER_CHAT_ID = parseInt(process.env.SELLER_CHAT_ID); // Telegram ID продавца (число)
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const SELLER_CHAT_ID = parseInt(process.env.SELLER_CHAT_ID);
+const PORT = process.env.PORT || 3000;
+
 if (!BOT_TOKEN || !SELLER_CHAT_ID) {
-  console.error("❌ Не задан BOT_TOKEN или SELLER_CHAT_ID в переменных окружения");
+  console.error("❌ Не задан BOT_TOKEN или SELLER_CHAT_ID");
   process.exit(1);
 }
 
-// --- Инициализация бота ---
 const bot = new Telegraf(BOT_TOKEN);
+const app = express();
+app.use(express.json());
 
-bot.start((ctx) => ctx.reply("Бот запущен!"));
-
-// Обработка данных из Mini App
-bot.on("text", (ctx) => {
+// --- Endpoint для мини приложения ---
+app.post("/reserve", async (req, res) => {
   try {
-    const data = JSON.parse(ctx.message.text);
+    const data = req.body;
     if (data.type === "reserve") {
       const message = `
 🎩 Новая бронь
@@ -26,32 +25,26 @@ bot.on("text", (ctx) => {
 Цена: ${data.price} ₽
 Место встречи: ${data.meet_place}
 Время встречи: ${data.meet_time}
-Покупатель: ${ctx.from.first_name} (@${ctx.from.username})
-UID: ${ctx.from.id}
+UID покупателя: ${data.user_id}
       `;
-      ctx.telegram.sendMessage(SELLER_CHAT_ID, message);
-      ctx.reply("✅ Бронь отправлена продавцу");
+      await bot.telegram.sendMessage(SELLER_CHAT_ID, message);
+      res.json({ ok: true });
+    } else {
+      res.json({ ok: false, error: "Неверный тип" });
     }
   } catch (e) {
-    // Не JSON — игнорируем
+    console.error(e);
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// --- Запуск бота ---
-bot.launch()
-  .then(() => console.log("🤖 Бот запущен"))
-  .catch(err => {
-    console.error("❌ Ошибка запуска бота:", err);
-    process.exit(1);
-  });
+// --- Для проверки ---
+app.get("/", (req, res) => res.send("Bot server is running"));
 
-// --- HTTP сервер для Render free plan ---
-const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("OK");
-}).listen(PORT, () => console.log(`🌐 HTTP server listening on ${PORT}`));
+// --- Запуск сервера ---
+app.listen(PORT, () => {
+  console.log(`🌐 HTTP server listening on ${PORT}`);
+});
 
-// Graceful stop
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+// --- НЕ запускать bot.launch() ---
+// Все обращения идут через webhook / POST на Render

@@ -20,34 +20,19 @@ app.use((req, res, next) => {
   next();
 });
 
-// Проверка, что сервер живой
-app.get('/', (req, res) => {
-  res.send('Бэкенд "Барахолка Березники" работает');
-});
-
-// Инициализация БД если файла нет
+// Инициализация БД если нет файла
 if (!fs.existsSync(DB_FILE)) {
-  fs.writeFileSync(DB_FILE, JSON.stringify({ orders: [], products: [] }, null, 2), 'utf8');
-  console.log('Создан пустой db.json');
+  fs.writeFileSync(DB_FILE, JSON.stringify({ orders: [], products: [] }), 'utf8');
 }
 
 // Чтение БД
 function readDB() {
-  try {
-    return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  } catch (err) {
-    console.error('Ошибка чтения db.json:', err);
-    return { orders: [], products: [] };
-  }
+  return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
 }
 
 // Запись БД
 function writeDB(data) {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
-  } catch (err) {
-    console.error('Ошибка записи в db.json:', err);
-  }
+  fs.writeFileSync(DB_FILE, JSON.stringify(data), 'utf8');
 }
 
 // Эндпоинты
@@ -63,7 +48,6 @@ app.post('/products', (req, res) => {
   newProduct.id = db.products.length + 1;
   db.products.push(newProduct);
   writeDB(db);
-  console.log(`Добавлен товар: ${newProduct.title}`);
   res.json(newProduct);
 });
 
@@ -72,14 +56,9 @@ app.post('/orders', (req, res) => {
   const newOrder = req.body;
   newOrder.id = db.orders.length + 1;
   newOrder.status = 'new';
-  newOrder.seller_id = 8050542983;           // ← ИЗМЕНИ НА СВОЙ TELEGRAM ID
-  newOrder.created_at = new Date().toISOString();
-
+  newOrder.seller_id = 8050542983; // ← измени на свой Telegram ID
   db.orders.push(newOrder);
   writeDB(db);
-
-  console.log(`Создан новый заказ #${newOrder.id} от пользователя ${newOrder.user_id}`);
-
   res.json(newOrder);
 });
 
@@ -87,13 +66,11 @@ app.get('/orders', (req, res) => {
   const db = readDB();
   const { user_id, seller_id } = req.query;
   let filtered = db.orders;
-
   if (user_id) {
     filtered = filtered.filter(o => o.user_id === parseInt(user_id));
   } else if (seller_id) {
     filtered = filtered.filter(o => o.seller_id === parseInt(seller_id));
   }
-
   res.json(filtered);
 });
 
@@ -101,56 +78,25 @@ app.patch('/orders/:id', (req, res) => {
   const db = readDB();
   const orderId = parseInt(req.params.id);
   const order = db.orders.find(o => o.id === orderId);
-
   if (!order) {
-    return res.status(404).json({ error: 'Заказ не найден' });
+    return res.status(404).json({ error: 'Order not found' });
   }
-
-  const { status } = req.body;
-  if (!status) {
-    return res.status(400).json({ error: 'Поле status обязательно' });
-  }
-
-  order.status = status;
-  order.updated_at = new Date().toISOString();
+  order.status = req.body.status;
   writeDB(db);
-
-  console.log(`Заказ #${orderId} изменён на статус: ${status}`);
-
   res.json(order);
 });
 
-// Запуск сервера
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Сервер запущен на порту ${PORT} (http://0.0.0.0:${PORT})`);
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
 
-// Добавляем тестовые товары ТОЛЬКО если их ещё нет
+// Инициализируем тестовые продукты (если БД пустая)
 const db = readDB();
 if (db.products.length === 0) {
   db.products = [
-    {
-      id: 1,
-      title: "NY Black",
-      desc: "Чёрная классика",
-      price: 2500,
-      image: "https://i.imgur.com/8QfKQwR.png"
-    },
-    {
-      id: 2,
-      title: "Adidas White",
-      desc: "Белый минимал",
-      price: 1800,
-      image: "https://i.imgur.com/nQv1Y5G.png"
-    },
-    {
-      id: 3,
-      title: "Snapback Red",
-      desc: "Street стиль",
-      price: 2200,
-      image: "https://i.imgur.com/L2zYVjM.png"
-    }
+    { id: 1, title: "NY Black", desc: "Чёрная классика", price: 2500, image: "https://i.imgur.com/8QfKQwR.png" },
+    { id: 2, title: "Adidas White", desc: "Белый минимал", price: 1800, image: "https://i.imgur.com/nQv1Y5G.png" },
+    { id: 3, title: "Snapback Red", desc: "Street стиль", price: 2200, image: "https://i.imgur.com/L2zYVjM.png" }
   ];
   writeDB(db);
-  console.log('Добавлены тестовые товары (первый запуск)');
 }

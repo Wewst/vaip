@@ -1,82 +1,138 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const TelegramBot = require('node-telegram-bot-api');
+const { Telegraf, Markup } = require("telegraf");
 
-const app = express();
-const port = process.env.PORT || 3000;
+/* ================= НАСТРОЙКИ ================= */
 
-// Токен бота (для уведомлений тебе/покупателю). Можно использовать один бот.
-const BOT_TOKEN = '8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8';  // ← замени
-const bot = new TelegramBot(BOT_TOKEN);
+// 🔴 ВСТАВЬ СЮДА НОВЫЙ ТОКЕН (НЕ ПАЛИ ЕГО)
+const BOT_TOKEN = "8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8";
 
-// Твой Telegram ID — куда слать уведомления о новых заказах
-const YOUR_TELEGRAM_ID = 8050542983;  // ← вставь свой ID от @userinfobot
+// 🔴 chat_id продавца
+const SELLER_CHAT_ID = 8050542983;
 
+/* ============================================= */
+
+const bot = new Telegraf(BOT_TOKEN);
+
+/**
+ * Простейшее хранилище броней
+ * (пока в памяти, можно заменить на БД)
+ */
 const orders = new Map();
-let orderIdCounter = 1000;
 
-app.use(bodyParser.json());
+/* ---------- ПОЛУЧЕНИЕ ДАННЫХ ИЗ MINI APP ---------- */
+bot.on("message", async (ctx) => {
+  const msg = ctx.message;
 
-// Эндпоинт для брони от покупателя
-app.post('/api/reserve', (req, res) => {
-  const { product_name, price, meet_place, meet_time, buyer_id, username } = req.body;
+  if (!msg.web_app_data) return;
 
-  if (!product_name || !price || !meet_place || !meet_time) {
-    return res.status(400).json({ error: 'Не все поля заполнены' });
+  let data;
+  try {
+    data = JSON.parse(msg.web_app_data.data);
+  } catch {
+    return;
   }
 
-  const orderId = String(orderIdCounter++);
+  if (data.type !== "reserve") return;
+
+  // жёсткая проверка
+  if (!data.meet_place || !data.meet_time) {
+    await ctx.reply("❌ Не указано место или время.");
+    return;
+  }
+
+  const user = msg.from;
+  const orderId = data.product_id || `${user.id}_${Date.now()}`;
+
   const order = {
     id: orderId,
-    product_name,
-    price: Number(price),
-    meet_place,
-    meet_time,
-    status: 'new',
-    buyer_id: Number(buyer_id) || 0,
-    username: username || 'аноним',
-    createdAt: new Date().toISOString()
+    product: data.product_name,
+    price: data.price,
+    place: data.meet_place,
+    time: data.meet_time,
+    user_id: user.id,
+    username: user.username || null,
+    status: "pending"
   };
 
   orders.set(orderId, order);
 
-  // Уведомление тебе
-  bot.sendMessage(YOUR_TELEGRAM_ID,
-    `🛒 НОВАЯ БРОНЬ #${orderId}\n\n${product_name} — ${price} ₽\n@${order.username}\nМесто: ${meet_place}\nВремя: ${meet_time}`
-  ).catch(err => console.error('Не удалось отправить уведомление:', err));
+  const text =
+`🧢 НОВАЯ БРОНЬ
 
-  res.json({ success: true, orderId });
+Товар: ${order.product}
+Цена: ${order.price} ₽
+
+📍 Место: ${order.place}
+⏰ Время: ${order.time}
+
+👤 Покупатель:
+ID: ${order.user_id}
+${order.username ? "@" + order.username : "без username"}
+`;
+
+  await ctx.telegram.sendMessage(
+    SELLER_CHAT_ID,
+    text,
+    Markup.inlineKeyboard([
+      [
+        Markup.button.callback("✅ Подтвердить", `confirm_${orderId}`),
+        Markup.button.callback("❌ Отклонить", `reject_${orderId}`)
+      ]
+    ])
+  );
+
+  await ctx.reply("✅ Бронь отправлена продавцу. Ожидай подтверждения.");
 });
 
-// Для продавца — все заказы
-app.get('/api/orders', (req, res) => {
-  res.json(Array.from(orders.values()));
-});
+/* ---------- ОБРАБОТКА КНОПОК ПРОДАВЦА ---------- */
+bot.on("callback_query", async (ctx) => {
+  const action = ctx.callbackQuery.data;
 
-// Обновление статуса
-app.post('/api/update-status', (req, res) => {
-  const { order_id, status } = req.body;
+  if (!action.includes("_")) return;
 
-  if (!order_id || !['confirmed', 'cancelled'].includes(status)) {
-    return res.status(400).json({ error: 'Неверные параметры' });
+  const [type, orderId] = action.split("_");
+  const order = orders.get(orderId);
+
+  if (!order) {
+    await ctx.answerCbQuery("Бронь не найдена");
+    return;
   }
 
-  const order = orders.get(order_id);
-  if (!order) return res.status(404).json({ error: 'Заказ не найден' });
-
-  order.status = status;
-
-  if (order.buyer_id > 0) {
-    const msg = status === 'confirmed'
-      ? `✅ Бронь подтверждена!\n${order.product_name} — ${order.meet_place} в ${order.meet_time}`
-      : `❌ Бронь отменена.\n${order.product_name}`;
-
-    bot.sendMessage(order.buyer_id, msg).catch(() => {});
+  if (order.status !== "pending") {
+    await ctx.answerCbQuery("Эта бронь уже обработана");
+    return;
   }
 
-  res.json({ success: true });
+  if (type === "confirm") {
+    order.status = "confirmed";
+
+    await ctx.telegram.sendMessage(
+      order.user_id,
+      "✅ Твоя бронь подтверждена! Продавец скоро напишет тебе."
+    );
+
+    await ctx.editMessageText(
+      ctx.callbackQuery.message.text + "\n\n✅ БРОНЬ ПОДТВЕРЖДЕНА"
+    );
+
+    await ctx.answerCbQuery("Подтверждено");
+  }
+
+  if (type === "reject") {
+    order.status = "rejected";
+
+    await ctx.telegram.sendMessage(
+      order.user_id,
+      "❌ Бронь отклонена продавцом."
+    );
+
+    await ctx.editMessageText(
+      ctx.callbackQuery.message.text + "\n\n❌ БРОНЬ ОТКЛОНЕНА"
+    );
+
+    await ctx.answerCbQuery("Отклонено");
+  }
 });
 
-app.listen(port, () => {
-  console.log(`Бекенд работает на порту ${port}`);
-});
+/* ---------- СЛУЖЕБНО ---------- */
+bot.launch();
+console.log("🤖 Бот запущен");

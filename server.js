@@ -20,23 +20,32 @@ app.use((req, res, next) => {
   next();
 });
 
-// Инициализация БД если нет файла
+// Проверка работоспособности
+app.get('/', (req, res) => {
+  res.send('Бэкенд Барахолка работает');
+});
+
+// Инициализация БД
 if (!fs.existsSync(DB_FILE)) {
   fs.writeFileSync(DB_FILE, JSON.stringify({ orders: [], products: [] }), 'utf8');
 }
 
-// Чтение БД
+// Функции для работы с БД
 function readDB() {
-  return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+  try {
+    return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+  } catch (err) {
+    return { orders: [], products: [] };
+  }
 }
 
-// Запись БД
 function writeDB(data) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data), 'utf8');
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch (err) {}
 }
 
 // Эндпоинты
-
 app.get('/products', (req, res) => {
   const db = readDB();
   res.json(db.products);
@@ -56,7 +65,8 @@ app.post('/orders', (req, res) => {
   const newOrder = req.body;
   newOrder.id = db.orders.length + 1;
   newOrder.status = 'new';
-  newOrder.seller_id = 8050542983; // ← измени на свой Telegram ID
+  newOrder.seller_id = 8050542983;           // ← ИЗМЕНИ НА СВОЙ TELEGRAM ID !!!
+  newOrder.created_at = new Date().toISOString();
   db.orders.push(newOrder);
   writeDB(db);
   res.json(newOrder);
@@ -86,11 +96,7 @@ app.patch('/orders/:id', (req, res) => {
   res.json(order);
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on http://0.0.0.0:${PORT}`);
-});
-
-// Инициализируем тестовые продукты (если БД пустая)
+// Добавляем тестовые товары, если их нет
 const db = readDB();
 if (db.products.length === 0) {
   db.products = [
@@ -100,3 +106,8 @@ if (db.products.length === 0) {
   ];
   writeDB(db);
 }
+
+// Запуск
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});

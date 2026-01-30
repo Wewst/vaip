@@ -4,8 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 const DB_FILE = path.join(__dirname, 'db.json');
 
 // Middleware
@@ -20,37 +19,30 @@ app.use((req, res, next) => {
   next();
 });
 
-// Проверка работоспособности
-app.get('/', (req, res) => {
-  res.send('Бэкенд Барахолка работает');
-});
-
-// Инициализация БД
+// Инициализация БД если нет файла
 if (!fs.existsSync(DB_FILE)) {
   fs.writeFileSync(DB_FILE, JSON.stringify({ orders: [], products: [] }), 'utf8');
 }
 
-// Функции для работы с БД
+// Чтение БД
 function readDB() {
-  try {
-    return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  } catch (err) {
-    return { orders: [], products: [] };
-  }
+  return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
 }
 
+// Запись БД
 function writeDB(data) {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
-  } catch (err) {}
+  fs.writeFileSync(DB_FILE, JSON.stringify(data), 'utf8');
 }
 
 // Эндпоинты
+
+// GET /products - получить список товаров (для покупателя)
 app.get('/products', (req, res) => {
   const db = readDB();
   res.json(db.products);
 });
 
+// POST /products - добавить товар (для продавца, но пока не реализовано в фронте)
 app.post('/products', (req, res) => {
   const db = readDB();
   const newProduct = req.body;
@@ -60,18 +52,19 @@ app.post('/products', (req, res) => {
   res.json(newProduct);
 });
 
+// POST /orders - создать заказ
 app.post('/orders', (req, res) => {
   const db = readDB();
   const newOrder = req.body;
   newOrder.id = db.orders.length + 1;
-  newOrder.status = 'new';
-  newOrder.seller_id = 8050542983;           // ← ИЗМЕНИ НА СВОЙ TELEGRAM ID !!!
-  newOrder.created_at = new Date().toISOString();
+  newOrder.status = 'new'; // Начальный статус
+  newOrder.seller_id = 8050542983; // Hardcode твоего seller_id (измени на свой Telegram ID)
   db.orders.push(newOrder);
   writeDB(db);
   res.json(newOrder);
 });
 
+// GET /orders - получить заказы (фильтр по user_id или seller_id)
 app.get('/orders', (req, res) => {
   const db = readDB();
   const { user_id, seller_id } = req.query;
@@ -84,6 +77,7 @@ app.get('/orders', (req, res) => {
   res.json(filtered);
 });
 
+// PATCH /orders/:id - обновить статус
 app.patch('/orders/:id', (req, res) => {
   const db = readDB();
   const orderId = parseInt(req.params.id);
@@ -96,7 +90,11 @@ app.patch('/orders/:id', (req, res) => {
   res.json(order);
 });
 
-// Добавляем тестовые товары, если их нет
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+});
+
+// Инициализируем тестовые продукты (если БД пустая)
 const db = readDB();
 if (db.products.length === 0) {
   db.products = [
@@ -106,8 +104,3 @@ if (db.products.length === 0) {
   ];
   writeDB(db);
 }
-
-// Запуск
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-});

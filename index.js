@@ -1,10 +1,9 @@
 const { Telegraf, Markup } = require("telegraf");
-const http = require("http"); // ← добавили встроенный http
 
 /* ================= НАСТРОЙКИ ================= */
 
 // 🔴 ВСТАВЬ СЮДА НОВЫЙ ТОКЕН (НЕ ПАЛИ ЕГО)
-const BOT_TOKEN = "8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8";
+const BOT_TOKEN = "8289215978:AAE8yPhfmAhmZ38N7DK25ntE9b0IN1cNxgY";
 
 // 🔴 chat_id продавца
 const SELLER_CHAT_ID = 8050542983;
@@ -12,21 +11,6 @@ const SELLER_CHAT_ID = 8050542983;
 /* ============================================= */
 
 const bot = new Telegraf(BOT_TOKEN);
-
-/* ================= ФЕЙКОВЫЙ СЕРВЕР ДЛЯ RENDER ================= */
-// Render требует, чтобы процесс слушал порт → создаём минимальный HTTP-сервер
-const PORT = process.env.PORT || 10000; // Render сам подставит PORT (обычно 10000)
-
-const server = http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("Telegram polling bot is running on Render\n");
-});
-
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Fake HTTP server started → Render видит порт ${PORT} и не убивает деплой`);
-});
-
-/* ================= ОСНОВНАЯ ЛОГИКА БОТА ================= */
 
 /**
  * Простейшее хранилище броней
@@ -49,14 +33,14 @@ bot.on("message", async (ctx) => {
 
   if (data.type !== "reserve") return;
 
-  // жёсткая проверка (исправил опечатку: было !data.meet_place !data.meet_time → ||)
+  // жёсткая проверка
   if (!data.meet_place || !data.meet_time) {
     await ctx.reply("❌ Не указано место или время.");
     return;
   }
 
   const user = msg.from;
-  const orderId = `${data.product_id || "prod"}_${user.id}_${Date.now()}`; // добавил fallback на product_id
+  const orderId = data.product_id || `${user.id}_${Date.now()}`;
 
   const order = {
     id: orderId,
@@ -105,7 +89,7 @@ bot.on("callback_query", async (ctx) => {
 
   if (!action.includes("_")) return;
 
-  const [type, orderId] = action.split("_", 2); // split только на 2 части
+  const [type, orderId] = action.split("_");
   const order = orders.get(orderId);
 
   if (!order) {
@@ -149,11 +133,17 @@ bot.on("callback_query", async (ctx) => {
   }
 });
 
-/* ---------- ЗАПУСК ================= */
-bot.launch()
-  .then(() => console.log("🤖 Бот запущен (polling)"))
-  .catch(err => console.error("Ошибка запуска бота:", err));
+const http = require("http");
 
-// Graceful shutdown (хорошая практика для Render)
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+const PORT = process.env.PORT || 3000;
+
+http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("OK");
+}).listen(PORT, () => {
+  console.log(`🌐 HTTP server listening on ${PORT}`);
+});
+
+/* ---------- СЛУЖЕБНО ---------- */
+bot.launch();
+console.log("🤖 Бот запущен");

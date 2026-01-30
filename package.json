@@ -1,13 +1,11 @@
 {
-  "name": "baraholka-backend",
+  "name": "tg-cap-bot",
   "version": "1.0.0",
-  "main": "server.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "body-parser": "^1.20.3",
-    "node-telegram-bot-api": "^0.66.0"
+    "telegraf": "^4.16.0"
   }
 }

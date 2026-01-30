@@ -20,7 +20,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Простой маршрут для проверки, что сервер работает
+// Проверка, что сервер живой
 app.get('/', (req, res) => {
   res.send('Бэкенд "Барахолка Березники" работает');
 });
@@ -52,13 +52,11 @@ function writeDB(data) {
 
 // Эндпоинты
 
-// GET /products - список товаров
 app.get('/products', (req, res) => {
   const db = readDB();
   res.json(db.products);
 });
 
-// POST /products - добавить товар (для будущего админ-панели)
 app.post('/products', (req, res) => {
   const db = readDB();
   const newProduct = req.body;
@@ -69,13 +67,12 @@ app.post('/products', (req, res) => {
   res.json(newProduct);
 });
 
-// POST /orders - создать заказ
 app.post('/orders', (req, res) => {
   const db = readDB();
   const newOrder = req.body;
   newOrder.id = db.orders.length + 1;
   newOrder.status = 'new';
-  newOrder.seller_id = 123456789;           // ← ИЗМЕНИ НА СВОЙ TELEGRAM ID
+  newOrder.seller_id = 8050542983;           // ← ИЗМЕНИ НА СВОЙ TELEGRAM ID
   newOrder.created_at = new Date().toISOString();
 
   db.orders.push(newOrder);
@@ -86,7 +83,6 @@ app.post('/orders', (req, res) => {
   res.json(newOrder);
 });
 
-// GET /orders - получить заказы с фильтрами
 app.get('/orders', (req, res) => {
   const db = readDB();
   const { user_id, seller_id } = req.query;
@@ -101,7 +97,6 @@ app.get('/orders', (req, res) => {
   res.json(filtered);
 });
 
-// PATCH /orders/:id - обновить статус заказа
 app.patch('/orders/:id', (req, res) => {
   const db = readDB();
   const orderId = parseInt(req.params.id);
@@ -129,3 +124,33 @@ app.patch('/orders/:id', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Сервер запущен на порту ${PORT} (http://0.0.0.0:${PORT})`);
 });
+
+// Добавляем тестовые товары ТОЛЬКО если их ещё нет
+const db = readDB();
+if (db.products.length === 0) {
+  db.products = [
+    {
+      id: 1,
+      title: "NY Black",
+      desc: "Чёрная классика",
+      price: 2500,
+      image: "https://i.imgur.com/8QfKQwR.png"
+    },
+    {
+      id: 2,
+      title: "Adidas White",
+      desc: "Белый минимал",
+      price: 1800,
+      image: "https://i.imgur.com/nQv1Y5G.png"
+    },
+    {
+      id: 3,
+      title: "Snapback Red",
+      desc: "Street стиль",
+      price: 2200,
+      image: "https://i.imgur.com/L2zYVjM.png"
+    }
+  ];
+  writeDB(db);
+  console.log('Добавлены тестовые товары (первый запуск)');
+}

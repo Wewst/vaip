@@ -90,6 +90,11 @@ app.patch('/orders/:id', (req, res) => {
   res.json(order);
 });
 
+// Добавляем маршрут для пинга (чтобы сервис не засыпал)
+app.get('/ping', (req, res) => {
+  res.status(200).send('pong');
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });

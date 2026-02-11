@@ -1,4 +1,3 @@
-
 const express = require('express');
 const bodyParser = require('body-parser');
 const fs = require('fs');
@@ -65,21 +64,28 @@ function sendTelegramNotification(order) {
   }
 
   const telegramLink = order.telegram_link ? (order.telegram_link.startsWith('@') ? order.telegram_link : `@${order.telegram_link}`) : 'Не указан';
-  const message = `🆕 *Новый заказ!*
+  const message = `🆕 Новый заказ!
 
-📦 Товар: ${order.product_name}
-💰 Цена: ${order.price} ₽
-📍 Место: ${order.meet_place}
+📦 Товар: ${order.product_name || 'Не указан'}
+💰 Цена: ${order.price || 0} ₽
+📍 Место: ${order.meet_place || 'Не указано'}
 🕐 Время: ${formatDateTime(order.meet_time)}
 💬 Telegram: ${telegramLink}
 
 ID заказа: #${order.id}`;
 
+  // Убеждаемся что chat_id это число
+  const chatId = parseInt(SELLER_CHAT_ID);
+  if (isNaN(chatId)) {
+    console.error('Некорректный SELLER_CHAT_ID:', SELLER_CHAT_ID);
+    return;
+  }
+
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
   const data = JSON.stringify({
-    chat_id: SELLER_CHAT_ID,
-    text: message,
-    parse_mode: 'Markdown'
+    chat_id: chatId,
+    text: message
+    // Убираем parse_mode чтобы избежать проблем с экранированием
   });
 
   const options = {
@@ -91,9 +97,20 @@ ID заказа: #${order.id}`;
   };
 
   const req = https.request(url, options, (res) => {
-    if (res.statusCode !== 200) {
-      console.error(`Ошибка отправки уведомления: ${res.statusCode}`);
-    }
+    let responseData = '';
+    
+    res.on('data', (chunk) => {
+      responseData += chunk;
+    });
+    
+    res.on('end', () => {
+      if (res.statusCode !== 200) {
+        console.error(`Ошибка отправки уведомления: ${res.statusCode}`);
+        console.error('Ответ от Telegram API:', responseData);
+      } else {
+        console.log('Уведомление успешно отправлено');
+      }
+    });
   });
 
   req.on('error', (error) => {

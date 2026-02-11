@@ -2,10 +2,15 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 
 const app = express();
 const PORT = 3000;
 const DB_FILE = path.join(__dirname, 'db.json');
+
+// Конфигурация Telegram Bot (опционально - если не указано, уведомления не будут отправляться)
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''; // Токен бота от @BotFather
+const SELLER_CHAT_ID = process.env.SELLER_CHAT_ID || '8050542983'; // Chat ID продавца (Telegram ID)
 
 // Middleware
 app.use(bodyParser.json());
@@ -32,6 +37,70 @@ function readDB() {
 // Запись БД
 function writeDB(data) {
   fs.writeFileSync(DB_FILE, JSON.stringify(data), 'utf8');
+}
+
+// Функция отправки уведомления в Telegram
+function sendTelegramNotification(order) {
+  // Если токен бота не указан, просто пропускаем отправку
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.log('Telegram Bot Token не указан. Уведомление не отправлено.');
+    return;
+  }
+
+  // Форматирование даты и времени
+  function formatDateTime(dateTimeString) {
+    if (!dateTimeString) return 'Не указано';
+    const date = new Date(dateTimeString);
+    if (isNaN(date.getTime())) return dateTimeString;
+    
+    const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 
+                    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+    const day = date.getDate();
+    const month = months[date.getMonth()];
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    
+    return `${day} ${month}, ${hours}:${minutes}`;
+  }
+
+  const telegramLink = order.telegram_link ? (order.telegram_link.startsWith('@') ? order.telegram_link : `@${order.telegram_link}`) : 'Не указан';
+  const message = `🆕 *Новый заказ!*
+
+📦 Товар: ${order.product_name}
+💰 Цена: ${order.price} ₽
+📍 Место: ${order.meet_place}
+🕐 Время: ${formatDateTime(order.meet_time)}
+💬 Telegram: ${telegramLink}
+
+ID заказа: #${order.id}`;
+
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+  const data = JSON.stringify({
+    chat_id: SELLER_CHAT_ID,
+    text: message,
+    parse_mode: 'Markdown'
+  });
+
+  const options = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': data.length
+    }
+  };
+
+  const req = https.request(url, options, (res) => {
+    if (res.statusCode !== 200) {
+      console.error(`Ошибка отправки уведомления: ${res.statusCode}`);
+    }
+  });
+
+  req.on('error', (error) => {
+    console.error('Ошибка при отправке уведомления в Telegram:', error.message);
+  });
+
+  req.write(data);
+  req.end();
 }
 
 // Эндпоинты
@@ -61,6 +130,15 @@ app.post('/orders', (req, res) => {
   newOrder.seller_id = 8050542983; // Hardcode твоего seller_id (измени на свой Telegram ID)
   db.orders.push(newOrder);
   writeDB(db);
+  
+  // Отправляем уведомление продавцу (не блокируем ответ)
+  try {
+    sendTelegramNotification(newOrder);
+  } catch (error) {
+    console.error('Ошибка при отправке уведомления:', error);
+    // Не прерываем выполнение, даже если уведомление не отправилось
+  }
+  
   res.json(newOrder);
 });
 

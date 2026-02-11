@@ -318,20 +318,29 @@ ID заказа: #${order.id}
 
 // Функция проверки и отправки напоминаний о встречах (за 15 минут до встречи)
 function checkAndSendReminders() {
+  console.log('🔄 Запуск проверки напоминаний...');
+  
   if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN.trim() === '') {
+    console.log('⏸️ Пропуск проверки: токен бота не установлен');
     return;
   }
 
   try {
     const db = readDB();
     const now = new Date();
+    console.log(`🕐 Проверка напоминаний в ${now.toLocaleString('ru-RU')} (${now.toISOString()})`);
+    console.log(`📦 Всего заказов в БД: ${db.orders.length}`);
+    console.log(`🕐 Проверка напоминаний в ${now.toLocaleString('ru-RU')}`);
     
     // Проверяем заказы со статусом 'new' или 'confirmed' (активные заказы)
     const activeOrders = db.orders.filter(order => 
       order.status === 'new' || order.status === 'confirmed'
     );
     
+    console.log(`📋 Найдено активных заказов: ${activeOrders.length}`);
+    
     if (activeOrders.length === 0) {
+      console.log('ℹ️ Нет активных заказов для проверки');
       return;
     }
 
@@ -339,15 +348,19 @@ function checkAndSendReminders() {
     
     activeOrders.forEach(order => {
       if (!order.meet_time) {
+        console.log(`⚠️ Заказ #${order.id} без времени встречи (meet_time: ${order.meet_time})`);
         return; // Пропускаем заказы без времени встречи
       }
 
       try {
+        console.log(`🔍 Проверка заказа #${order.id}: meet_time = "${order.meet_time}"`);
         const meetTime = new Date(order.meet_time);
         if (isNaN(meetTime.getTime())) {
           console.log(`⚠️ Невалидная дата для заказа #${order.id}: ${order.meet_time}`);
           return; // Пропускаем невалидные даты
         }
+        
+        console.log(`   Парсинг успешен: ${meetTime.toISOString()} (${meetTime.toLocaleString('ru-RU')})`);
 
         // Вычисляем разницу во времени до встречи (в миллисекундах)
         const timeDiff = meetTime.getTime() - now.getTime();
@@ -384,6 +397,8 @@ function checkAndSendReminders() {
     if (remindersSent > 0) {
       writeDB(db);
       console.log(`📨 Отправлено ${remindersSent} напоминаний о встречах`);
+    } else {
+      console.log(`ℹ️ Напоминаний не отправлено (проверено заказов: ${activeOrders.length})`);
     }
   } catch (error) {
     console.error('❌ Ошибка при проверке заказов для напоминаний:', error);

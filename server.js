@@ -294,14 +294,22 @@ ID заказа: #${order.id}
       responseData += chunk.toString();
     });
     res.on('end', () => {
-      if (res.statusCode === 200) {
-        console.log(`✅ Напоминание о встрече отправлено для заказа #${order.id} (${isSeller ? 'продавцу' : 'покупателю'})`);
+      try {
+        const response = JSON.parse(responseData);
+        if (res.statusCode === 200 && response.ok) {
+          console.log(`✅ Напоминание о встрече отправлено для заказа #${order.id} (${isSeller ? 'продавцу' : 'покупателю'})`);
+        } else {
+          console.error(`❌ Ошибка отправки напоминания для заказа #${order.id}: ${res.statusCode}`);
+          console.error('Ответ от Telegram:', response);
+        }
+      } catch (e) {
+        console.error(`❌ Ошибка парсинга ответа для заказа #${order.id}:`, responseData);
       }
     });
   });
 
   req.on('error', (error) => {
-    // Тихая обработка ошибок для напоминаний
+    console.error(`❌ Ошибка сети при отправке напоминания для заказа #${order.id}:`, error.message);
   });
 
   req.write(data);
@@ -345,15 +353,14 @@ function checkAndSendReminders() {
         const timeDiff = meetTime.getTime() - now.getTime();
         const minutesUntilMeeting = timeDiff / (1000 * 60);
 
-        // Логируем для отладки (только для заказов, где до встречи меньше 20 минут)
-        if (minutesUntilMeeting > 0 && minutesUntilMeeting < 20) {
-          console.log(`🔍 Заказ #${order.id}: до встречи ${Math.round(minutesUntilMeeting)} минут (встреча: ${meetTime.toLocaleString('ru-RU')}, сейчас: ${now.toLocaleString('ru-RU')})`);
+        // Логируем для отладки (только для заказов, где до встречи меньше 30 минут)
+        if (minutesUntilMeeting > 0 && minutesUntilMeeting < 30) {
+          console.log(`🔍 Заказ #${order.id}: до встречи ${Math.round(minutesUntilMeeting * 10) / 10} минут (встреча: ${meetTime.toLocaleString('ru-RU')}, сейчас: ${now.toLocaleString('ru-RU')}, reminder_sent: ${order.reminder_sent || false})`);
         }
 
         // Отправляем напоминание, если до встречи осталось от 14 до 16 минут
-        // (небольшой диапазон, чтобы не отправлять несколько раз)
-        // Расширяем диапазон до 13-17 минут для большей надежности
-        if (minutesUntilMeeting >= 13 && minutesUntilMeeting <= 17) {
+        // Расширяем диапазон для большей надежности (12-18 минут)
+        if (minutesUntilMeeting >= 12 && minutesUntilMeeting <= 18) {
           // Проверяем, не отправляли ли уже напоминание (чтобы не спамить)
           if (!order.reminder_sent) {
             console.log(`📤 Отправка напоминания для заказа #${order.id} (до встречи: ${Math.round(minutesUntilMeeting)} минут)`);
@@ -454,16 +461,53 @@ app.get('/ping', (req, res) => {
   res.status(200).send('pong');
 });
 
+// Тестовый эндпоинт для проверки напоминаний
+app.get('/test-reminders', (req, res) => {
+  try {
+    const db = readDB();
+    const now = new Date();
+    const activeOrders = db.orders.filter(order => 
+      (order.status === 'new' || order.status === 'confirmed') && order.meet_time
+    );
+    
+    const ordersInfo = activeOrders.map(order => {
+      const meetTime = new Date(order.meet_time);
+      const timeDiff = meetTime.getTime() - now.getTime();
+      const minutesUntilMeeting = timeDiff / (1000 * 60);
+      
+      return {
+        id: order.id,
+        product_name: order.product_name,
+        meet_time: order.meet_time,
+        meet_time_parsed: meetTime.toISOString(),
+        minutes_until: Math.round(minutesUntilMeeting),
+        status: order.status,
+        reminder_sent: order.reminder_sent || false,
+        should_send: minutesUntilMeeting >= 12 && minutesUntilMeeting <= 18 && !order.reminder_sent
+      };
+    });
+    
+    res.json({
+      current_time: now.toISOString(),
+      current_time_local: now.toLocaleString('ru-RU'),
+      active_orders_count: activeOrders.length,
+      orders: ordersInfo
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   
   // Запускаем периодическую проверку заказов для напоминаний о встречах
   if (TELEGRAM_BOT_TOKEN && TELEGRAM_BOT_TOKEN.trim() !== '') {
-    console.log('⏰ Система напоминаний о встречах запущена (проверка каждую минуту)');
+    console.log('⏰ Система напоминаний о встречах запущена (проверка каждые 30 секунд)');
     // Первая проверка сразу при запуске
     checkAndSendReminders();
-    // Проверяем каждую минуту, чтобы точно поймать момент за 15 минут до встречи
-    setInterval(checkAndSendReminders, 60 * 1000); // 1 минута = 60000 мс
+    // Проверяем каждые 30 секунд для большей точности
+    setInterval(checkAndSendReminders, 30 * 1000); // 30 секунд = 30000 мс
   } else {
     console.log('⚠️ Telegram Bot Token не установлен. Напоминания о встречах отключены.');
   }

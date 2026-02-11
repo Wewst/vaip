@@ -191,6 +191,128 @@ ID заказа: #${order.id}`;
   req.end();
 }
 
+// Функция отправки напоминания о заказе
+function sendOrderReminder(order) {
+  // Если токен бота не указан, просто пропускаем отправку
+  if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN.trim() === '') {
+    return;
+  }
+
+  // Форматирование даты и времени
+  function formatDateTime(dateTimeString) {
+    if (!dateTimeString) return 'Не указано';
+    try {
+      const date = new Date(dateTimeString);
+      if (isNaN(date.getTime())) return dateTimeString;
+      
+      const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 
+                      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+      const day = date.getDate();
+      const month = months[date.getMonth()];
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      
+      return `${day} ${month}, ${hours}:${minutes}`;
+    } catch (e) {
+      return dateTimeString;
+    }
+  }
+
+  const telegramLink = order.telegram_link ? (order.telegram_link.startsWith('@') ? order.telegram_link : `@${order.telegram_link}`) : 'Не указан';
+  const message = `⏰ Напоминание: у вас есть новый заказ!
+
+📦 Товар: ${order.product_name || 'Не указан'}
+💰 Цена: ${order.price || 0} ₽
+📍 Место: ${order.meet_place || 'Не указано'}
+🕐 Время: ${formatDateTime(order.meet_time)}
+💬 Telegram: ${telegramLink}
+
+ID заказа: #${order.id}
+
+Не забудьте обработать заказ!`;
+
+  // Используем seller_id из заказа
+  let chatId = order.seller_id || SELLER_CHAT_ID;
+  if (typeof chatId === 'string') {
+    const parsed = parseInt(chatId);
+    if (!isNaN(parsed)) {
+      chatId = parsed;
+    }
+  }
+
+  if (!chatId) {
+    return;
+  }
+
+  const cleanToken = TELEGRAM_BOT_TOKEN.trim();
+  if (!/^\d+:[A-Za-z0-9_-]+$/.test(cleanToken)) {
+    return;
+  }
+
+  const url = `https://api.telegram.org/bot${cleanToken}/sendMessage`;
+  const payload = {
+    chat_id: chatId,
+    text: message
+  };
+
+  const data = JSON.stringify(payload);
+  const urlObj = new URL(url);
+  const options = {
+    hostname: urlObj.hostname,
+    port: 443,
+    path: urlObj.pathname,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(data, 'utf8')
+    }
+  };
+
+  const req = https.request(options, (res) => {
+    let responseData = '';
+    res.on('data', (chunk) => {
+      responseData += chunk.toString();
+    });
+    res.on('end', () => {
+      if (res.statusCode === 200) {
+        console.log(`✅ Напоминание отправлено для заказа #${order.id}`);
+      }
+    });
+  });
+
+  req.on('error', (error) => {
+    // Тихая обработка ошибок для напоминаний
+  });
+
+  req.write(data);
+  req.end();
+}
+
+// Функция проверки и отправки напоминаний о новых заказах
+function checkAndSendReminders() {
+  if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN.trim() === '') {
+    return;
+  }
+
+  try {
+    const db = readDB();
+    const newOrders = db.orders.filter(order => order.status === 'new');
+    
+    if (newOrders.length === 0) {
+      return;
+    }
+
+    console.log(`📋 Найдено ${newOrders.length} новых заказов для напоминания`);
+    
+    newOrders.forEach(order => {
+      // Отправляем напоминание для каждого нового заказа
+      sendOrderReminder(order);
+    });
+  } catch (error) {
+    console.error('Ошибка при проверке заказов для напоминаний:', error);
+  }
+}
+
 // Эндпоинты
 
 // GET /products - получить список товаров (для покупателя)
@@ -263,6 +385,16 @@ app.get('/ping', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  
+  // Запускаем периодическую проверку новых заказов каждые 15 минут
+  if (TELEGRAM_BOT_TOKEN && TELEGRAM_BOT_TOKEN.trim() !== '') {
+    console.log('⏰ Система напоминаний о новых заказах запущена (каждые 15 минут)');
+    // Первая проверка через 1 минуту после запуска, затем каждые 15 минут
+    setTimeout(() => {
+      checkAndSendReminders();
+      setInterval(checkAndSendReminders, 15 * 60 * 1000); // 15 минут = 900000 мс
+    }, 60 * 1000); // 1 минута
+  }
 });
 
 // Инициализируем тестовые продукты (если БД пустая)

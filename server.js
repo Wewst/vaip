@@ -8,7 +8,18 @@ const app = express();
 const PORT = 3000;
 const DB_FILE = path.join(__dirname, 'db.json');
 
-
+// Конфигурация Telegram Bot (опционально - если не указано, уведомления не будут отправляться)
+// 
+// ИНСТРУКЦИЯ ПО НАСТРОЙКЕ:
+// 1. Создайте бота через @BotFather в Telegram
+// 2. Получите токен (формат: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz)
+// 3. Задайте токен одним из способов:
+//    - Через переменную окружения: TELEGRAM_BOT_TOKEN=ваш_токен
+//    - Или замените пустую строку '' на ваш токен в строке ниже
+//
+// 4. ВАЖНО: Пользователь (продавец) должен сначала начать диалог с ботом (отправить /start),
+//    иначе бот не сможет отправлять сообщения!
+//
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8'; // Токен бота от @BotFather
 const SELLER_CHAT_ID = process.env.SELLER_CHAT_ID || '8050542983'; // Chat ID продавца (Telegram ID)
 
@@ -82,8 +93,10 @@ function sendTelegramNotification(order) {
 
 ID заказа: #${order.id}`;
 
-  // Убеждаемся что chat_id это число или строка
-  let chatId = SELLER_CHAT_ID;
+  // Используем seller_id из заказа, если он есть, иначе используем SELLER_CHAT_ID
+  let chatId = order.seller_id || SELLER_CHAT_ID;
+  
+  // Преобразуем в число, если это строка с числом
   if (typeof chatId === 'string') {
     const parsed = parseInt(chatId);
     if (!isNaN(parsed)) {
@@ -92,9 +105,13 @@ ID заказа: #${order.id}`;
   }
   
   if (!chatId || (typeof chatId !== 'number' && typeof chatId !== 'string')) {
-    console.error('Некорректный SELLER_CHAT_ID:', SELLER_CHAT_ID);
+    console.error('❌ Некорректный chat_id для отправки уведомления');
+    console.error('seller_id из заказа:', order.seller_id);
+    console.error('SELLER_CHAT_ID из конфига:', SELLER_CHAT_ID);
     return;
   }
+  
+  console.log('📨 Отправка уведомления продавцу (chat_id):', chatId);
 
   // Валидация токена (должен быть в формате числа:буквы)
   const cleanToken = TELEGRAM_BOT_TOKEN.trim();
@@ -104,9 +121,9 @@ ID заказа: #${order.id}`;
     return;
   }
 
-  console.log('📤 Отправка уведомления...');
-  console.log('Chat ID:', chatId);
-  console.log('Токен (первые 10 символов):', cleanToken.substring(0, 10) + '...');
+  console.log('📤 Отправка уведомления продавцу...');
+  console.log('Chat ID продавца:', chatId);
+  console.log('Токен бота (первые 10 символов):', cleanToken.substring(0, 10) + '...');
 
   const url = `https://api.telegram.org/bot${cleanToken}/sendMessage`;
   const payload = {
@@ -141,10 +158,23 @@ ID заказа: #${order.id}`;
         if (res.statusCode === 200 && response.ok) {
           console.log('✅ Уведомление успешно отправлено в Telegram');
         } else {
-          console.error(`❌ Ошибка отправки уведомления: ${res.statusCode}`);
-          console.error('Ответ от Telegram API:', response);
+          console.error(`❌ Ошибка отправки уведомления продавцу: ${res.statusCode}`);
+          console.error('Полный ответ от Telegram API:', JSON.stringify(response, null, 2));
           if (response.description) {
-            console.error('Описание ошибки:', response.description);
+            console.error('📋 Описание ошибки:', response.description);
+            
+            // Полезные подсказки для частых ошибок
+            if (response.description.includes('chat not found') || response.description.includes('chat_id is empty')) {
+              console.error('💡 ВАЖНО: Пользователь (продавец) должен сначала начать диалог с ботом!');
+              console.error('💡 Отправьте команду /start боту в Telegram, чтобы он мог отправлять вам сообщения.');
+            } else if (response.description.includes('Unauthorized')) {
+              console.error('💡 ВАЖНО: Неверный токен бота! Проверьте TELEGRAM_BOT_TOKEN.');
+            } else if (response.description.includes('Bad Request')) {
+              console.error('💡 ВАЖНО: Неверный формат запроса. Проверьте chat_id и токен.');
+            }
+          }
+          if (response.error_code) {
+            console.error('Код ошибки:', response.error_code);
           }
         }
       } catch (e) {

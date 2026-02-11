@@ -195,7 +195,8 @@ ID заказа: #${order.id}`;
 function sendMeetingReminder(order, isSeller = true) {
   // Если токен бота не указан, просто пропускаем отправку
   if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN.trim() === '') {
-    return;
+    console.error('❌ Токен бота не установлен, отправка невозможна');
+    return false;
   }
 
   // Форматирование даты и времени
@@ -261,13 +262,17 @@ ID заказа: #${order.id}
   }
 
   if (!chatId) {
-    return;
+    console.error(`❌ Нет chat_id для отправки напоминания (заказ #${order.id})`);
+    return false;
   }
 
   const cleanToken = TELEGRAM_BOT_TOKEN.trim();
   if (!/^\d+:[A-Za-z0-9_-]+$/.test(cleanToken)) {
-    return;
+    console.error('❌ Неверный формат токена бота');
+    return false;
   }
+  
+  console.log(`📨 Попытка отправить напоминание: chat_id=${chatId}, заказ #${order.id}`);
 
   const url = `https://api.telegram.org/bot${cleanToken}/sendMessage`;
   const payload = {
@@ -297,23 +302,32 @@ ID заказа: #${order.id}
       try {
         const response = JSON.parse(responseData);
         if (res.statusCode === 200 && response.ok) {
-          console.log(`✅ Напоминание о встрече отправлено для заказа #${order.id} (${isSeller ? 'продавцу' : 'покупателю'})`);
+          console.log(`✅✅✅ НАПОМИНАНИЕ УСПЕШНО ОТПРАВЛЕНО для заказа #${order.id} (${isSeller ? 'продавцу' : 'покупателю'})`);
+          console.log(`   Chat ID: ${chatId}`);
+          console.log(`   Message ID: ${response.result?.message_id || 'N/A'}`);
         } else {
-          console.error(`❌ Ошибка отправки напоминания для заказа #${order.id}: ${res.statusCode}`);
-          console.error('Ответ от Telegram:', response);
+          console.error(`❌❌❌ КРИТИЧЕСКАЯ ОШИБКА отправки напоминания для заказа #${order.id}: ${res.statusCode}`);
+          console.error('Полный ответ от Telegram:', JSON.stringify(response, null, 2));
+          if (response.description) {
+            console.error('Описание ошибки:', response.description);
+          }
         }
       } catch (e) {
         console.error(`❌ Ошибка парсинга ответа для заказа #${order.id}:`, responseData);
+        console.error('Ошибка:', e.message);
       }
     });
   });
 
   req.on('error', (error) => {
     console.error(`❌ Ошибка сети при отправке напоминания для заказа #${order.id}:`, error.message);
+    console.error('Stack:', error.stack);
   });
 
   req.write(data);
   req.end();
+  
+  // Запрос отправлен (результат будет в callback)
 }
 
 // Функция проверки и отправки напоминаний о встречах (за 15 минут до встречи)
@@ -371,20 +385,29 @@ function checkAndSendReminders() {
           console.log(`🔍 Заказ #${order.id}: до встречи ${Math.round(minutesUntilMeeting * 10) / 10} минут (встреча: ${meetTime.toLocaleString('ru-RU')}, сейчас: ${now.toLocaleString('ru-RU')}, reminder_sent: ${order.reminder_sent || false})`);
         }
 
-        // Отправляем напоминание, если до встречи осталось от 14 до 16 минут
-        // Расширяем диапазон для большей надежности (12-18 минут)
-        if (minutesUntilMeeting >= 12 && minutesUntilMeeting <= 18) {
-          // Проверяем, не отправляли ли уже напоминание (чтобы не спамить)
-          if (!order.reminder_sent) {
-            console.log(`📤 Отправка напоминания для заказа #${order.id} (до встречи: ${Math.round(minutesUntilMeeting)} минут)`);
-            console.log(`   Время встречи: ${meetTime.toLocaleString('ru-RU')}`);
-            console.log(`   Текущее время: ${now.toLocaleString('ru-RU')}`);
-            sendMeetingReminder(order, true); // Отправляем продавцу
-            // Помечаем, что напоминание отправлено
+        // Отправляем напоминание, если до встречи осталось от 10 до 20 минут
+        // Широкий диапазон для гарантированной отправки
+        if (minutesUntilMeeting >= 10 && minutesUntilMeeting <= 20) {
+          // Проверяем, не отправляли ли уже напоминание в последние 10 минут
+          const lastReminderTime = order.last_reminder_time ? new Date(order.last_reminder_time) : null;
+          const minutesSinceLastReminder = lastReminderTime ? (now.getTime() - lastReminderTime.getTime()) / (1000 * 60) : Infinity;
+          
+          // Отправляем, если не отправляли или прошло больше 10 минут
+          if (!order.reminder_sent || minutesSinceLastReminder > 10) {
+            console.log(`📤 ОТПРАВКА НАПОМИНАНИЯ для заказа #${order.id} (до встречи: ${Math.round(minutesUntilMeeting * 10) / 10} минут)`);
+            console.log(`   Время встречи: ${meetTime.toLocaleString('ru-RU')} (${meetTime.toISOString()})`);
+            console.log(`   Текущее время: ${now.toLocaleString('ru-RU')} (${now.toISOString()})`);
+            console.log(`   Разница: ${Math.round(minutesUntilMeeting * 10) / 10} минут`);
+            
+            // Отправляем напоминание (функция асинхронная, но мы помечаем сразу)
+            sendMeetingReminder(order, true);
+            // Помечаем, что напоминание отправлено (даже если будет ошибка, попробуем еще раз через 10 минут)
             order.reminder_sent = true;
+            order.last_reminder_time = now.toISOString();
             remindersSent++;
+            console.log(`✅ Напоминание помечено как отправленное для заказа #${order.id}`);
           } else {
-            console.log(`⏭️ Напоминание для заказа #${order.id} уже было отправлено ранее`);
+            console.log(`⏭️ Напоминание для заказа #${order.id} уже было отправлено ${Math.round(minutesSinceLastReminder)} минут назад`);
           }
         }
       } catch (e) {
@@ -521,8 +544,8 @@ app.listen(PORT, () => {
     console.log('⏰ Система напоминаний о встречах запущена (проверка каждые 30 секунд)');
     // Первая проверка сразу при запуске
     checkAndSendReminders();
-    // Проверяем каждые 30 секунд для большей точности
-    setInterval(checkAndSendReminders, 30 * 1000); // 30 секунд = 30000 мс
+    // Проверяем каждые 10 секунд для максимальной точности
+    setInterval(checkAndSendReminders, 10 * 1000); // 10 секунд = 10000 мс
   } else {
     console.log('⚠️ Telegram Bot Token не установлен. Напоминания о встречах отключены.');
   }

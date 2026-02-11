@@ -1,3 +1,4 @@
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const fs = require('fs');
@@ -9,7 +10,7 @@ const PORT = 3000;
 const DB_FILE = path.join(__dirname, 'db.json');
 
 // Конфигурация Telegram Bot (опционально - если не указано, уведомления не будут отправляться)
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''; // Токен бота от @BotFather
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8'; // Токен бота от @BotFather
 const SELLER_CHAT_ID = process.env.SELLER_CHAT_ID || '8050542983'; // Chat ID продавца (Telegram ID)
 
 // Middleware

@@ -8,20 +8,7 @@ const app = express();
 const PORT = 3000;
 const DB_FILE = path.join(__dirname, 'db.json');
 
-// Конфигурация Telegram Bot (опционально - если не указано, уведомления не будут отправляться)
-// 
-// ИНСТРУКЦИЯ ПО НАСТРОЙКЕ:
-// 1. Создайте бота через @BotFather в Telegram
-// 2. Получите токен (формат: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz)
-// 3. Задайте токен одним из способов:
-//    - Через переменную окружения: TELEGRAM_BOT_TOKEN=ваш_токен
-//    - Или раскомментируйте строку ниже и вставьте токен:
-//
-const TELEGRAM_BOT_TOKEN = '8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8';
-//
-// 4. ВАЖНО: Пользователь (продавец) должен сначала начать диалог с ботом (отправить /start),
-//    иначе бот не сможет отправлять сообщения!
-//
+
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8'; // Токен бота от @BotFather
 const SELLER_CHAT_ID = process.env.SELLER_CHAT_ID || '8050542983'; // Chat ID продавца (Telegram ID)
 

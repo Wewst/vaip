@@ -9,8 +9,25 @@ const PORT = 3000;
 const DB_FILE = path.join(__dirname, 'db.json');
 
 // Конфигурация Telegram Bot (опционально - если не указано, уведомления не будут отправляться)
+// 
+// ИНСТРУКЦИЯ ПО НАСТРОЙКЕ:
+// 1. Создайте бота через @BotFather в Telegram
+// 2. Получите токен (формат: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz)
+// 3. Задайте токен одним из способов:
+//    - Через переменную окружения: TELEGRAM_BOT_TOKEN=ваш_токен
+//    - Или раскомментируйте строку ниже и вставьте токен:
+//
+const TELEGRAM_BOT_TOKEN = '8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8';
+//
+// 4. ВАЖНО: Пользователь (продавец) должен сначала начать диалог с ботом (отправить /start),
+//    иначе бот не сможет отправлять сообщения!
+//
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8'; // Токен бота от @BotFather
 const SELLER_CHAT_ID = process.env.SELLER_CHAT_ID || '8050542983'; // Chat ID продавца (Telegram ID)
+
+// Логирование конфигурации (без токена для безопасности)
+console.log('Telegram Bot настроен:', TELEGRAM_BOT_TOKEN ? 'Да (токен установлен)' : 'Нет (токен не установлен)');
+console.log('SELLER_CHAT_ID:', SELLER_CHAT_ID);
 
 // Middleware
 app.use(bodyParser.json());
@@ -42,7 +59,7 @@ function writeDB(data) {
 // Функция отправки уведомления в Telegram
 function sendTelegramNotification(order) {
   // Если токен бота не указан, просто пропускаем отправку
-  if (!TELEGRAM_BOT_TOKEN) {
+  if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN.trim() === '') {
     console.log('Telegram Bot Token не указан. Уведомление не отправлено.');
     return;
   }
@@ -50,17 +67,21 @@ function sendTelegramNotification(order) {
   // Форматирование даты и времени
   function formatDateTime(dateTimeString) {
     if (!dateTimeString) return 'Не указано';
-    const date = new Date(dateTimeString);
-    if (isNaN(date.getTime())) return dateTimeString;
-    
-    const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 
-                    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
-    const day = date.getDate();
-    const month = months[date.getMonth()];
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    
-    return `${day} ${month}, ${hours}:${minutes}`;
+    try {
+      const date = new Date(dateTimeString);
+      if (isNaN(date.getTime())) return dateTimeString;
+      
+      const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 
+                      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+      const day = date.getDate();
+      const month = months[date.getMonth()];
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      
+      return `${day} ${month}, ${hours}:${minutes}`;
+    } catch (e) {
+      return dateTimeString;
+    }
   }
 
   const telegramLink = order.telegram_link ? (order.telegram_link.startsWith('@') ? order.telegram_link : `@${order.telegram_link}`) : 'Не указан';
@@ -74,41 +95,73 @@ function sendTelegramNotification(order) {
 
 ID заказа: #${order.id}`;
 
-  // Убеждаемся что chat_id это число
-  const chatId = parseInt(SELLER_CHAT_ID);
-  if (isNaN(chatId)) {
+  // Убеждаемся что chat_id это число или строка
+  let chatId = SELLER_CHAT_ID;
+  if (typeof chatId === 'string') {
+    const parsed = parseInt(chatId);
+    if (!isNaN(parsed)) {
+      chatId = parsed;
+    }
+  }
+  
+  if (!chatId || (typeof chatId !== 'number' && typeof chatId !== 'string')) {
     console.error('Некорректный SELLER_CHAT_ID:', SELLER_CHAT_ID);
     return;
   }
 
-  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-  const data = JSON.stringify({
+  // Валидация токена (должен быть в формате числа:буквы)
+  const cleanToken = TELEGRAM_BOT_TOKEN.trim();
+  if (!/^\d+:[A-Za-z0-9_-]+$/.test(cleanToken)) {
+    console.error('❌ Некорректный формат Telegram Bot Token. Формат должен быть: число:буквы');
+    console.error('Пример правильного токена: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz');
+    return;
+  }
+
+  console.log('📤 Отправка уведомления...');
+  console.log('Chat ID:', chatId);
+  console.log('Токен (первые 10 символов):', cleanToken.substring(0, 10) + '...');
+
+  const url = `https://api.telegram.org/bot${cleanToken}/sendMessage`;
+  const payload = {
     chat_id: chatId,
     text: message
-    // Убираем parse_mode чтобы избежать проблем с экранированием
-  });
+  };
 
+  const data = JSON.stringify(payload);
+
+  const urlObj = new URL(url);
   const options = {
+    hostname: urlObj.hostname,
+    port: 443,
+    path: urlObj.pathname,
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Content-Length': data.length
+      'Content-Length': Buffer.byteLength(data, 'utf8')
     }
   };
 
-  const req = https.request(url, options, (res) => {
+  const req = https.request(options, (res) => {
     let responseData = '';
     
     res.on('data', (chunk) => {
-      responseData += chunk;
+      responseData += chunk.toString();
     });
     
     res.on('end', () => {
-      if (res.statusCode !== 200) {
-        console.error(`Ошибка отправки уведомления: ${res.statusCode}`);
-        console.error('Ответ от Telegram API:', responseData);
-      } else {
-        console.log('Уведомление успешно отправлено');
+      try {
+        const response = JSON.parse(responseData);
+        if (res.statusCode === 200 && response.ok) {
+          console.log('✅ Уведомление успешно отправлено в Telegram');
+        } else {
+          console.error(`❌ Ошибка отправки уведомления: ${res.statusCode}`);
+          console.error('Ответ от Telegram API:', response);
+          if (response.description) {
+            console.error('Описание ошибки:', response.description);
+          }
+        }
+      } catch (e) {
+        console.error('Ошибка парсинга ответа:', responseData);
       }
     });
   });

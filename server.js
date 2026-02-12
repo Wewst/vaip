@@ -389,18 +389,18 @@ function checkAndSendReminders() {
           console.log(`   last_reminder_time: ${order.last_reminder_time || 'нет'}`);
         }
 
-        // ОТПРАВЛЯЕМ НАПОМИНАНИЕ, ЕСЛИ ДО ВСТРЕЧИ ОСТАЛОСЬ ОТ 10 ДО 20 МИНУТ
-        // Широкий диапазон для гарантированной отправки
+        // ОТПРАВЛЯЕМ НАПОМИНАНИЕ, ЕСЛИ ДО ВСТРЕЧИ ОСТАЛОСЬ ОТ 8 ДО 22 МИНУТ
+        // МАКСИМАЛЬНО ШИРОКИЙ ДИАПАЗОН ДЛЯ ГАРАНТИИ
         console.log(`   ⏱️ Заказ #${order.id}: до встречи ${Math.round(minutesUntilMeeting * 10) / 10} минут`);
         
-        if (minutesUntilMeeting >= 10 && minutesUntilMeeting <= 20) {
-          console.log(`   ✅ УСЛОВИЕ ВЫПОЛНЕНО! Должно отправиться напоминание для заказа #${order.id}`);
+        if (minutesUntilMeeting >= 8 && minutesUntilMeeting <= 22) {
+          console.log(`   ✅✅✅ УСЛОВИЕ ВЫПОЛНЕНО! Должно отправиться напоминание для заказа #${order.id}`);
           // Проверяем, не отправляли ли уже напоминание в последние 10 минут
           const lastReminderTime = order.last_reminder_time ? new Date(order.last_reminder_time) : null;
           const minutesSinceLastReminder = lastReminderTime ? (now.getTime() - lastReminderTime.getTime()) / (1000 * 60) : Infinity;
           
-          // Отправляем, если не отправляли или прошло больше 10 минут
-          if (!order.reminder_sent || minutesSinceLastReminder > 10) {
+          // Отправляем, если не отправляли или прошло больше 5 минут (более гибко)
+          if (!order.reminder_sent || minutesSinceLastReminder > 5) {
             console.log(`📤 ОТПРАВКА НАПОМИНАНИЯ для заказа #${order.id} (до встречи: ${Math.round(minutesUntilMeeting * 10) / 10} минут)`);
             console.log(`   Время встречи: ${meetTime.toLocaleString('ru-RU')} (${meetTime.toISOString()})`);
             console.log(`   Текущее время: ${now.toLocaleString('ru-RU')} (${now.toISOString()})`);
@@ -504,6 +504,54 @@ app.patch('/orders/:id', (req, res) => {
 // Добавляем маршрут для пинга (чтобы сервис не засыпал)
 app.get('/ping', (req, res) => {
   res.status(200).send('pong');
+});
+
+// Эндпоинт для принудительной отправки напоминания (для тестирования)
+app.post('/send-reminder/:orderId', (req, res) => {
+  try {
+    const db = readDB();
+    const orderId = parseInt(req.params.orderId);
+    const order = db.orders.find(o => o.id === orderId);
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    console.log(`🔔 ПРИНУДИТЕЛЬНАЯ ОТПРАВКА напоминания для заказа #${orderId}`);
+    sendMeetingReminder(order, true);
+    
+    res.json({ 
+      success: true, 
+      message: 'Напоминание отправлено',
+      order_id: orderId 
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Эндпоинт для принудительной отправки напоминания (для тестирования)
+app.post('/send-reminder/:orderId', (req, res) => {
+  try {
+    const db = readDB();
+    const orderId = parseInt(req.params.orderId);
+    const order = db.orders.find(o => o.id === orderId);
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    console.log(`🔔 ПРИНУДИТЕЛЬНАЯ ОТПРАВКА напоминания для заказа #${orderId}`);
+    sendMeetingReminder(order, true);
+    
+    res.json({ 
+      success: true, 
+      message: 'Напоминание отправлено',
+      order_id: orderId 
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Тестовый эндпоинт для проверки напоминаний

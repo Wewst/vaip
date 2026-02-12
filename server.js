@@ -389,12 +389,12 @@ function checkAndSendReminders() {
           console.log(`   last_reminder_time: ${order.last_reminder_time || 'нет'}`);
         }
 
-        // ОТПРАВЛЯЕМ НАПОМИНАНИЕ, ЕСЛИ ДО ВСТРЕЧИ ОСТАЛОСЬ ОТ 8 ДО 22 МИНУТ
-        // МАКСИМАЛЬНО ШИРОКИЙ ДИАПАЗОН ДЛЯ ГАРАНТИИ
+        // ОТПРАВЛЯЕМ НАПОМИНАНИЕ, ЕСЛИ ДО ВСТРЕЧИ ОСТАЛОСЬ ПРИМЕРНО 15 МИНУТ
+        // Узкое окно 14–16 минут, чтобы напоминание было "за 15 минут"
         console.log(`   ⏱️ Заказ #${order.id}: до встречи ${Math.round(minutesUntilMeeting * 10) / 10} минут`);
         
-        if (minutesUntilMeeting >= 8 && minutesUntilMeeting <= 22) {
-          console.log(`   ✅✅✅ УСЛОВИЕ ВЫПОЛНЕНО! Должно отправиться напоминание для заказа #${order.id}`);
+        if (minutesUntilMeeting >= 14 && minutesUntilMeeting <= 16) {
+          console.log(`   ✅✅✅ УСЛОВИЕ ВЫПОЛНЕНО (≈15 минут)! Должно отправиться напоминание для заказа #${order.id}`);
           // Проверяем, не отправляли ли уже напоминание в последние 10 минут
           const lastReminderTime = order.last_reminder_time ? new Date(order.last_reminder_time) : null;
           const minutesSinceLastReminder = lastReminderTime ? (now.getTime() - lastReminderTime.getTime()) / (1000 * 60) : Infinity;
@@ -530,30 +530,6 @@ app.post('/send-reminder/:orderId', (req, res) => {
   }
 });
 
-// Эндпоинт для принудительной отправки напоминания (для тестирования)
-app.post('/send-reminder/:orderId', (req, res) => {
-  try {
-    const db = readDB();
-    const orderId = parseInt(req.params.orderId);
-    const order = db.orders.find(o => o.id === orderId);
-    
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-    
-    console.log(`🔔 ПРИНУДИТЕЛЬНАЯ ОТПРАВКА напоминания для заказа #${orderId}`);
-    sendMeetingReminder(order, true);
-    
-    res.json({ 
-      success: true, 
-      message: 'Напоминание отправлено',
-      order_id: orderId 
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Тестовый эндпоинт для проверки напоминаний
 app.get('/test-reminders', (req, res) => {
   try {
@@ -576,7 +552,8 @@ app.get('/test-reminders', (req, res) => {
         minutes_until: Math.round(minutesUntilMeeting),
         status: order.status,
         reminder_sent: order.reminder_sent || false,
-        should_send: minutesUntilMeeting >= 12 && minutesUntilMeeting <= 18 && !order.reminder_sent
+        // Совпадает с основной логикой: напоминание при 14–16 минутах до встречи
+        should_send: minutesUntilMeeting >= 14 && minutesUntilMeeting <= 16 && !order.reminder_sent
       };
     });
     

@@ -23,6 +23,18 @@ const DB_FILE = path.join(__dirname, 'db.json');
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8'; // Токен бота от @BotFather
 const SELLER_CHAT_ID = process.env.SELLER_CHAT_ID || '8050542983'; // Chat ID продавца (Telegram ID)
 
+// Пермский край, Россия — UTC+5. Время с фронта (datetime-local) приходит без пояса;
+// сервер в UTC воспринимает его как UTC. Переводим: "15:47" у пользователя = 15:47 Пермь = 10:47 UTC.
+const PERM_UTC_OFFSET_MS = 5 * 60 * 60 * 1000;
+
+/** Парсит meet_time как местное время Пермского края (UTC+5) и возвращает момент в UTC. */
+function meetTimeToUTC(meetTimeString) {
+  if (!meetTimeString) return null;
+  const parsed = new Date(meetTimeString);
+  if (isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getTime() - PERM_UTC_OFFSET_MS);
+}
+
 // Логирование конфигурации (без токена для безопасности)
 console.log('Telegram Bot настроен:', TELEGRAM_BOT_TOKEN ? 'Да (токен установлен)' : 'Нет (токен не установлен)');
 console.log('SELLER_CHAT_ID:', SELLER_CHAT_ID);
@@ -368,23 +380,21 @@ function checkAndSendReminders() {
 
       try {
         console.log(`🔍 Проверка заказа #${order.id}: meet_time = "${order.meet_time}"`);
-        const meetTime = new Date(order.meet_time);
-        if (isNaN(meetTime.getTime())) {
+        const meetTime = meetTimeToUTC(order.meet_time);
+        if (!meetTime) {
           console.log(`⚠️ Невалидная дата для заказа #${order.id}: ${order.meet_time}`);
           return; // Пропускаем невалидные даты
         }
-        
-        console.log(`   Парсинг успешен: ${meetTime.toISOString()} (${meetTime.toLocaleString('ru-RU')})`);
+        console.log(`   Встреча (Пермь): ${order.meet_time} → UTC: ${meetTime.toISOString()}`);
 
-        // Вычисляем разницу во времени до встречи (в миллисекундах)
+        // Вычисляем разницу до встречи (now и meetTime в UTC)
         const timeDiff = meetTime.getTime() - now.getTime();
         const minutesUntilMeeting = timeDiff / (1000 * 60);
 
-        // ВСЕГДА логируем для заказов, где до встречи меньше 30 минут
+        // Логируем для заказов, где до встречи меньше 30 минут (всё в UTC)
         if (minutesUntilMeeting > 0 && minutesUntilMeeting < 30) {
-          console.log(`🔍 Заказ #${order.id}: до встречи ${Math.round(minutesUntilMeeting * 10) / 10} минут`);
-          console.log(`   Встреча: ${meetTime.toLocaleString('ru-RU')} (${meetTime.toISOString()})`);
-          console.log(`   Сейчас: ${now.toLocaleString('ru-RU')} (${now.toISOString()})`);
+          console.log(`🔍 Заказ #${order.id}: до встречи ${Math.round(minutesUntilMeeting * 10) / 10} мин (встреча в Перми ≈ ${order.meet_time})`);
+          console.log(`   Встреча UTC: ${meetTime.toISOString()}, сейчас UTC: ${now.toISOString()}`);
           console.log(`   reminder_sent: ${order.reminder_sent || false}`);
           console.log(`   last_reminder_time: ${order.last_reminder_time || 'нет'}`);
         }
@@ -401,10 +411,9 @@ function checkAndSendReminders() {
           
           // Отправляем, если не отправляли или прошло больше 5 минут (более гибко)
           if (!order.reminder_sent || minutesSinceLastReminder > 5) {
-            console.log(`📤 ОТПРАВКА НАПОМИНАНИЯ для заказа #${order.id} (до встречи: ${Math.round(minutesUntilMeeting * 10) / 10} минут)`);
-            console.log(`   Время встречи: ${meetTime.toLocaleString('ru-RU')} (${meetTime.toISOString()})`);
-            console.log(`   Текущее время: ${now.toLocaleString('ru-RU')} (${now.toISOString()})`);
-            console.log(`   Разница: ${Math.round(minutesUntilMeeting * 10) / 10} минут`);
+            console.log(`📤 ОТПРАВКА НАПОМИНАНИЯ для заказа #${order.id} (до встречи: ${Math.round(minutesUntilMeeting * 10) / 10} мин)`);
+            console.log(`   Время встречи в Перми: ${order.meet_time}, UTC: ${meetTime.toISOString()}`);
+            console.log(`   Сейчас UTC: ${now.toISOString()}`);
             
             // Отправляем напоминание (функция асинхронная, но мы помечаем сразу)
             sendMeetingReminder(order, true);
@@ -540,7 +549,10 @@ app.get('/test-reminders', (req, res) => {
     );
     
     const ordersInfo = activeOrders.map(order => {
-      const meetTime = new Date(order.meet_time);
+      const meetTime = meetTimeToUTC(order.meet_time);
+      if (!meetTime) {
+        return { id: order.id, product_name: order.product_name, meet_time: order.meet_time, error: 'invalid meet_time', minutes_until: null, should_send: false };
+      }
       const timeDiff = meetTime.getTime() - now.getTime();
       const minutesUntilMeeting = timeDiff / (1000 * 60);
       
@@ -548,11 +560,10 @@ app.get('/test-reminders', (req, res) => {
         id: order.id,
         product_name: order.product_name,
         meet_time: order.meet_time,
-        meet_time_parsed: meetTime.toISOString(),
+        meet_time_utc: meetTime.toISOString(),
         minutes_until: Math.round(minutesUntilMeeting),
         status: order.status,
         reminder_sent: order.reminder_sent || false,
-        // Совпадает с основной логикой: напоминание при 14–16 минутах до встречи
         should_send: minutesUntilMeeting >= 14 && minutesUntilMeeting <= 16 && !order.reminder_sent
       };
     });

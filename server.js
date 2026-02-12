@@ -380,14 +380,21 @@ function checkAndSendReminders() {
         const timeDiff = meetTime.getTime() - now.getTime();
         const minutesUntilMeeting = timeDiff / (1000 * 60);
 
-        // Логируем для отладки (только для заказов, где до встречи меньше 30 минут)
+        // ВСЕГДА логируем для заказов, где до встречи меньше 30 минут
         if (minutesUntilMeeting > 0 && minutesUntilMeeting < 30) {
-          console.log(`🔍 Заказ #${order.id}: до встречи ${Math.round(minutesUntilMeeting * 10) / 10} минут (встреча: ${meetTime.toLocaleString('ru-RU')}, сейчас: ${now.toLocaleString('ru-RU')}, reminder_sent: ${order.reminder_sent || false})`);
+          console.log(`🔍 Заказ #${order.id}: до встречи ${Math.round(minutesUntilMeeting * 10) / 10} минут`);
+          console.log(`   Встреча: ${meetTime.toLocaleString('ru-RU')} (${meetTime.toISOString()})`);
+          console.log(`   Сейчас: ${now.toLocaleString('ru-RU')} (${now.toISOString()})`);
+          console.log(`   reminder_sent: ${order.reminder_sent || false}`);
+          console.log(`   last_reminder_time: ${order.last_reminder_time || 'нет'}`);
         }
 
-        // Отправляем напоминание, если до встречи осталось от 10 до 20 минут
+        // ОТПРАВЛЯЕМ НАПОМИНАНИЕ, ЕСЛИ ДО ВСТРЕЧИ ОСТАЛОСЬ ОТ 10 ДО 20 МИНУТ
         // Широкий диапазон для гарантированной отправки
+        console.log(`   ⏱️ Заказ #${order.id}: до встречи ${Math.round(minutesUntilMeeting * 10) / 10} минут`);
+        
         if (minutesUntilMeeting >= 10 && minutesUntilMeeting <= 20) {
+          console.log(`   ✅ УСЛОВИЕ ВЫПОЛНЕНО! Должно отправиться напоминание для заказа #${order.id}`);
           // Проверяем, не отправляли ли уже напоминание в последние 10 минут
           const lastReminderTime = order.last_reminder_time ? new Date(order.last_reminder_time) : null;
           const minutesSinceLastReminder = lastReminderTime ? (now.getTime() - lastReminderTime.getTime()) / (1000 * 60) : Infinity;
@@ -541,11 +548,17 @@ app.listen(PORT, () => {
   
   // Запускаем периодическую проверку заказов для напоминаний о встречах
   if (TELEGRAM_BOT_TOKEN && TELEGRAM_BOT_TOKEN.trim() !== '') {
-    console.log('⏰ Система напоминаний о встречах запущена (проверка каждые 30 секунд)');
+    console.log('⏰ Система напоминаний о встречах запущена (проверка каждые 10 секунд)');
     // Первая проверка сразу при запуске
+    console.log('🔄 Первая проверка напоминаний...');
     checkAndSendReminders();
     // Проверяем каждые 10 секунд для максимальной точности
-    setInterval(checkAndSendReminders, 10 * 1000); // 10 секунд = 10000 мс
+    const reminderInterval = setInterval(() => {
+      checkAndSendReminders();
+    }, 10 * 1000); // 10 секунд = 10000 мс
+    
+    // Сохраняем интервал для возможной остановки в будущем
+    console.log('✅ Интервал проверки установлен:', reminderInterval);
   } else {
     console.log('⚠️ Telegram Bot Token не установлен. Напоминания о встречах отключены.');
   }

@@ -25,7 +25,7 @@ const SELLER_CHAT_ID = process.env.SELLER_CHAT_ID || '8050542983'; // Chat ID п
 
 // Второй бот — только для напоминаний покупателям за 15 минут до встречи.
 // Создай отдельного бота через @BotFather; покупатель должен один раз написать ему /start.
-const BUYER_BOT_TOKEN = process.env.BUYER_BOT_TOKEN || '8289215978:AAGO7FscrCaQhSwCvF12Is-MXEGn9tmcw3w'; // Токен бота для покупателей (оставь '' если не нужен)
+const BUYER_BOT_TOKEN = process.env.BUYER_BOT_TOKEN || ''; // Токен бота для покупателей (оставь '' если не нужен)
 
 // Пермский край, Россия — UTC+5. Время с фронта (datetime-local) приходит без пояса;
 // сервер в UTC воспринимает его как UTC. Переводим: "15:47" у пользователя = 15:47 Пермь = 10:47 UTC.
@@ -49,7 +49,7 @@ app.use(bodyParser.json());
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
@@ -516,6 +516,23 @@ app.patch('/orders/:id', (req, res) => {
   order.status = req.body.status;
   writeDB(db);
   res.json(order);
+});
+
+// DELETE /orders/:id - удалить заказ (только свой: передай user_id в query)
+app.delete('/orders/:id', (req, res) => {
+  const db = readDB();
+  const orderId = parseInt(req.params.id);
+  const userId = req.query.user_id != null ? parseInt(req.query.user_id) : null;
+  const order = db.orders.find(o => o.id === orderId);
+  if (!order) {
+    return res.status(404).json({ error: 'Order not found' });
+  }
+  if (userId != null && order.user_id !== userId) {
+    return res.status(403).json({ error: 'Можно отменить только свой заказ' });
+  }
+  db.orders = db.orders.filter(o => o.id !== orderId);
+  writeDB(db);
+  res.json({ success: true, message: 'Заказ удалён' });
 });
 
 // Добавляем маршрут для пинга (чтобы сервис не засыпал)

@@ -20,8 +20,12 @@ const DB_FILE = path.join(__dirname, 'db.json');
 // 4. ВАЖНО: Пользователь (продавец) должен сначала начать диалог с ботом (отправить /start),
 //    иначе бот не сможет отправлять сообщения!
 //
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8'; // Токен бота от @BotFather
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8'; // Токен бота для продавца (уведомления о заказах и напоминания)
 const SELLER_CHAT_ID = process.env.SELLER_CHAT_ID || '8050542983'; // Chat ID продавца (Telegram ID)
+
+// Второй бот — только для напоминаний покупателям за 15 минут до встречи.
+// Создай отдельного бота через @BotFather; покупатель должен один раз написать ему /start.
+const BUYER_BOT_TOKEN = process.env.BUYER_BOT_TOKEN || '8289215978:AAGO7FscrCaQhSwCvF12Is-MXEGn9tmcw3w'; // Токен бота для покупателей (оставь '' если не нужен)
 
 // Пермский край, Россия — UTC+5. Время с фронта (datetime-local) приходит без пояса;
 // сервер в UTC воспринимает его как UTC. Переводим: "15:47" у пользователя = 15:47 Пермь = 10:47 UTC.
@@ -36,7 +40,8 @@ function meetTimeToUTC(meetTimeString) {
 }
 
 // Логирование конфигурации (без токена для безопасности)
-console.log('Telegram Bot настроен:', TELEGRAM_BOT_TOKEN ? 'Да (токен установлен)' : 'Нет (токен не установлен)');
+console.log('Telegram Bot (продавец):', TELEGRAM_BOT_TOKEN ? 'Да' : 'Нет');
+console.log('Telegram Bot (покупатели, напоминания):', BUYER_BOT_TOKEN ? 'Да' : 'Нет');
 console.log('SELLER_CHAT_ID:', SELLER_CHAT_ID);
 
 // Middleware
@@ -203,11 +208,12 @@ ID заказа: #${order.id}`;
   req.end();
 }
 
-// Функция отправки напоминания о встрече
+// Функция отправки напоминания о встрече (продавцу — бот продавца, покупателю — отдельный бот)
 function sendMeetingReminder(order, isSeller = true) {
-  // Если токен бота не указан, просто пропускаем отправку
-  if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN.trim() === '') {
-    console.error('❌ Токен бота не установлен, отправка невозможна');
+  const token = isSeller ? TELEGRAM_BOT_TOKEN : BUYER_BOT_TOKEN;
+  if (!token || token.trim() === '') {
+    if (isSeller) console.error('❌ Токен бота продавца не установлен');
+    else console.log('⏭️ Токен бота для покупателей не задан — напоминание покупателю пропущено');
     return false;
   }
 
@@ -274,11 +280,11 @@ ID заказа: #${order.id}
   }
 
   if (!chatId) {
-    console.error(`❌ Нет chat_id для отправки напоминания (заказ #${order.id})`);
+    console.error(`❌ Нет chat_id для отправки напоминания (заказ #${order.id})${isSeller ? '' : ' (у заказа нет user_id — покупатель заходил из приложения?)'}`);
     return false;
   }
 
-  const cleanToken = TELEGRAM_BOT_TOKEN.trim();
+  const cleanToken = token.trim();
   if (!/^\d+:[A-Za-z0-9_-]+$/.test(cleanToken)) {
     console.error('❌ Неверный формат токена бота');
     return false;
@@ -415,8 +421,10 @@ function checkAndSendReminders() {
             console.log(`   Время встречи в Перми: ${order.meet_time}, UTC: ${meetTime.toISOString()}`);
             console.log(`   Сейчас UTC: ${now.toISOString()}`);
             
-            // Отправляем напоминание (функция асинхронная, но мы помечаем сразу)
+            // Напоминание продавцу (бот продавца)
             sendMeetingReminder(order, true);
+            // Напоминание покупателю (другой бот; нужен order.user_id и BUYER_BOT_TOKEN)
+            sendMeetingReminder(order, false);
             // Помечаем, что напоминание отправлено (даже если будет ошибка, попробуем еще раз через 10 минут)
             order.reminder_sent = true;
             order.last_reminder_time = now.toISOString();

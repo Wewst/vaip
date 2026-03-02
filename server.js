@@ -21,7 +21,7 @@ const DB_FILE = path.join(__dirname, 'db.json');
 //    иначе бот не сможет отправлять сообщения!
 //
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8144916530:AAHk1iLZp7EFfgAZyzZxVhHsjSjCeUNBhF8'; // Токен бота для продавца (уведомления о заказах и напоминания)
-const SELLER_CHAT_ID = process.env.SELLER_CHAT_ID || '8050542983'; // Chat ID продавца (Telegram ID)
+const SELLER_CHAT_ID = process.env.SELLER_CHAT_ID || '5360572081'; // Chat ID продавца (Telegram ID)
 
 // Второй бот — только для напоминаний покупателям за 15 минут до встречи.
 // Создай отдельного бота через @BotFather; покупатель должен один раз написать ему /start.
